@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:tx="http://www.springframework.org/schema/tx"
+    xmlns:sharding="http://shardingsphere.io/schema/shardingsphere/sharding"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans
+                        http://www.springframework.org/schema/beans/spring-beans.xsd 
+                        http://www.springframework.org/schema/tx 
+                        http://www.springframework.org/schema/tx/spring-tx.xsd
+                        http://www.springframework.org/schema/context 
+                        http://www.springframework.org/schema/context/spring-context.xsd
+                        http://shardingsphere.io/schema/shardingsphere/sharding 
+                        http://shardingsphere.io/schema/shardingsphere/sharding/sharding.xsd">
+                        
+	<context:property-placeholder location="classpath:properties/database.properties" /><!-- 加载配置文件 -->  
+	
+    <!-- <context:component-scan base-package="com.sharding.demo" /> -->
+    
+    <!-- 配置数据来源 一 -->
+    <bean id="separate_entity_0" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver"/>
+        <property name="url" value="${sharding.jdbc.datasource.separate_entity_0.url}"/>
+        <property name="username" value="${sharding.jdbc.datasource.separate_entity_0.username}"/>
+        <property name="password" value="${sharding.jdbc.datasource.separate_entity_0.password}"/>
+    </bean>
+    <!-- 配置数据来源 二 -->
+    <bean id="separate_entity_1" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver"/>
+        <property name="url" value="${sharding.jdbc.datasource.separate_entity_1.url}"/>
+        <property name="username" value="${sharding.jdbc.datasource.separate_entity_1.username}"/>
+        <property name="password" value="${sharding.jdbc.datasource.separate_entity_1.password}"/>
+    </bean>
+	
+	<!-- 可能不同的业务表有不同的业务规则，会出现好多个分库，分表策略-->
+    <bean id="preciseModuloDatabaseShardingAlgorithm" class="com.sharding.demo.algorithm.DatabaseShardingAlgorithm" />
+    <bean id="preciseModuloTableShardingAlgorithmDetail" class="com.sharding.demo.algorithm.TableShardingAlgorithmDetail" />
+    <bean id="preciseModuloTableShardingAlgorithmTransFlow" class="com.sharding.demo.algorithm.TableShardingAlgorithmTransFlow" />
+
+    <!-- 可能不同的业务表有不同的业务规则，会出现好多个分库，分表策略，这块指定了-->
+    <!-- id： Spring Bean Id -->
+    <!-- sharding-column：分片列名称 -->
+    <!-- precise-algorithm-ref：精确分片算法引用，用于=和IN。该类需实现PreciseShardingAlgorithm接口 -->
+    <sharding:standard-strategy id="databaseShardingStrategy" sharding-column="usr_id"  precise-algorithm-ref="preciseModuloDatabaseShardingAlgorithm" />
+    <sharding:standard-strategy id="tableShardingStrategyDetail"    sharding-column="detail_id" precise-algorithm-ref="preciseModuloTableShardingAlgorithmDetail" />
+    <sharding:standard-strategy id="tableShardingStrategyTransFlow"    sharding-column="txn" precise-algorithm-ref="preciseModuloTableShardingAlgorithmTransFlow" />
+
+    <sharding:data-source id="shardingDataSource">
+        <!-- data-source-names： 数据源bean列表,逗号隔开多个 -->
+        <sharding:sharding-rule data-source-names="separate_entity_0,separate_entity_1">
+            <sharding:table-rules> <!-- 表分片规则列表 -->
+                <!-- logic-table：逻辑表名称 -->
+                <!-- actual-data-nodes (?)：由数据源名 + 表名组成，以小数点分隔。多个表以逗号分隔，支持inline表达式。缺省表示使用已知数据源与逻辑表名称生成数据节点。用于广播表（即每个库中都需要一个同样的表用于关联查询，多为字典表）或只分库不分表且所有库的表结构完全一致的情况 -->
+                <!-- database-strategy-ref (?)：数据库分片策略，对应<sharding:xxx-strategy>中的策略Id，缺省表示使用<sharding:sharding-rule />配置的默认数据库分片策略 -->
+                <!-- table-strategy-ref (?)：表分片策略，对应<sharding:xxx-strategy>中的策略Id，缺省表示使用<sharding:sharding-rule />配置的默认表分片策略 -->
+                <!-- generate-key-column-name (?) ： 自增列名称，缺省表示不使用自增主键生成器-->
+                <sharding:table-rule logic-table="detail"
+                	actual-data-nodes="${sharding.jdbc.datasource.actual.data.nodes.detail}"
+                	database-strategy-ref="databaseShardingStrategy"
+                    table-strategy-ref="tableShardingStrategyDetail" />
+                	  
+                <sharding:table-rule logic-table="trans_flow"
+                	actual-data-nodes="${sharding.jdbc.datasource.actual.data.nodes.transflow}"
+                	database-strategy-ref="databaseShardingStrategy" 
+                	table-strategy-ref="tableShardingStrategyTransFlow"/>
+            </sharding:table-rules>
+        </sharding:sharding-rule>
+    </sharding:data-source>
+    
+    <!-- 事务配置 -->
+    <bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="shardingDataSource" />
+    </bean>
+    <tx:annotation-driven transaction-manager="transactionManager"/>
+
+    <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <property name="dataSource" ref="shardingDataSource"/>
+        <property name="mapperLocations" value="classpath:mapper/*.xml"/>
+    </bean>
+    
+    <bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="com.sharding.demo"/>
+        <property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/>
+    </bean>
+    
+</beans>
