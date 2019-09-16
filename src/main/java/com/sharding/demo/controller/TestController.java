@@ -101,5 +101,12 @@ public class TestController {
     }
 
 
+    @RequestMapping("/test")
+    @ResponseBody
+    public String testStr(){
+
+        return "123";
+    }
+
 
 }
